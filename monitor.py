@@ -3,7 +3,7 @@ import urllib.parse
 import os
 import json
 
-TARGET_NAME = "徐文浩" 
+TARGET_NAME = "潘条珍" 
 SERVER_CHAN_KEY = os.environ.get("SERVER_KEY", "") 
 
 ENCODED_USER_ID = urllib.parse.quote(TARGET_NAME)
