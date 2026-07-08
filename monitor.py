@@ -199,8 +199,16 @@ def monitor():
                     msg_body += f"🛒 已用积分: {old_used} -> {usedAccount} ({sign})\n"
                 else:
                     msg_body += f"🛒 已用积分: {usedAccount}\n"
-        else:
+                else:
             print(f"数据未发生变化。剩余积分维持 {account}。")
+            
+        # 👇👇👇 补上这段最关键的发送逻辑 👇👇👇
+        if need_notify:
+            send_wechat_msg(msg_title, msg_body)
+        # 👆👆👆 补上这段最关键的发送逻辑 👆👆👆
+            
+        # 只要有任何数据变化，立刻更新 JSON 供 GitHub Action 提交
+        if last_data is None or current_simplified != last_data:
             
         # 只要有任何数据变化，立刻更新 JSON 供 GitHub Action 提交
         if last_data is None or current_simplified != last_data:
