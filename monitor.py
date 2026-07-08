@@ -1,5 +1,3 @@
-#每天的晚上6-9点，如果当日积分和剩余积分有增加则今天停止运行
-#如果发现当日积分增加，我们就把今天的“日期”存入 last_data.json 中作为标记。后续每次运行脚本时，先检查这个日期，如果是今天，就直接退出不查了；如果是第二天，自动恢复检查。
 import requests
 import urllib.parse
 import os
@@ -13,7 +11,7 @@ TARGET_NAME = os.environ.get("TARGET_NAME", "")
 VILLAGE_ID = os.environ.get("VILLAGE_ID", "")
 SERVER_CHAN_KEY = os.environ.get("SERVER_KEY", "") 
 
-# 增加安全检查：如果缺少任何一个必填配置，则报错退出
+# 增加安全检查
 if not TARGET_NAME or not VILLAGE_ID:
     print("错误：未在环境变量(Secrets)中配置 TARGET_NAME 或 VILLAGE_ID，程序退出。")
     sys.exit(1)
@@ -30,7 +28,6 @@ HEADERS = {
 DATA_FILE = "last_data.json"
 
 def get_beijing_date():
-    """获取当前的北京时间日期 (YYYY-MM-DD)"""
     utc_now = datetime.now(timezone.utc)
     bj_now = utc_now + timedelta(hours=8)
     return bj_now.strftime("%Y-%m-%d")
@@ -40,20 +37,13 @@ def send_wechat_msg(title, content):
         print("未配置 SERVER_KEY，跳过微信通知。")
         return
     url = f"https://sctapi.ftqq.com/{SERVER_CHAN_KEY}.send"
-    
-    # 打印用来排查的调试信息
     print(f"[DEBUG] 准备向 Server酱 发送请求...")
     print(f"[DEBUG] KEY 长度: {len(SERVER_CHAN_KEY)}, KEY 前缀: {SERVER_CHAN_KEY[:4]}")
-    
     try:
-        # Server酱更推荐用 json 或者将 header 设置完整
         headers = {'Content-Type': 'application/x-www-form-urlencoded'}
         res = requests.post(url, data={"title": title, "desp": content}, headers=headers, timeout=10)
-        
-        # 强制打印 Server酱 返回的真实原因
         print(f"[DEBUG] Server酱返回状态码: {res.status_code}")
         print(f"[DEBUG] Server酱返回内容: {res.text}")
-        
     except Exception as e:
         print(f"[ERROR] 请求 Server酱 发生异常: {e}")
 
@@ -71,7 +61,6 @@ def monitor():
         last_data = get_last_data()
         current_date_str = get_beijing_date()
         
-        # 核心拦截逻辑：检查今天是否已经彻底完成（拿到至少8分）
         if last_data and last_data.get("finished_date") == current_date_str:
             print(f"[{current_date_str}] 今日积分已达标，暂停运行，明天自动恢复。")
             return
@@ -98,7 +87,11 @@ def monitor():
         allAccount = current.get('allAccount')
         usedAccount = current.get('usedAccount')
 
-        # 【脱敏处理】保存到 JSON 并推送到 GitHub 的内容全部打码
+        # 【历史记录逻辑】
+        history_record = last_data.get("history_record", {}) if last_data else {}
+        history_record[current_date_str] = max(history_record.get(current_date_str, 0), todayAccount)
+
+        # 【脱敏处理】
         current_simplified = {
             "groupName": "***",
             "numberPlate": "***",
@@ -109,12 +102,12 @@ def monitor():
             "allAccount": allAccount,
             "usedAccount": usedAccount,
             "finished_date": last_data.get("finished_date") if last_data else "",
-            "record_date": current_date_str
+            "record_date": current_date_str,
+            "history_record": history_record
         }
         
         need_notify = False
         msg_title = ""
-        # 微信推送里依然使用真实的 userName 和 groupName，因为这是发给你自己看的
         msg_body = f"👤 姓名: {userName}\n🏠 地址: {groupName} {numberPlate}\n\n"
         
         if last_data is None:
@@ -130,19 +123,22 @@ def monitor():
             )
             
         elif current_simplified != last_data:
-            print("发现积分或排名变化！")
-            
+            print("发现数据有变动！")
             last_record_date = last_data.get('record_date', '')
             
-            # 判断是否是新的一天
             if current_date_str != last_record_date:
                 old_today = 0
             else:
                 old_today = last_data.get('todayAccount', 0)
                 
-            # 跨天且积分为0时，静默更新不打扰
-            if current_date_str != last_record_date and todayAccount == 0:
-                print("检测到跨天积分重置为0，静默更新数据。")
+            old_account = last_data.get('account')
+
+            # 【精准拦截】：只看 今日积分(todayAccount) 或 剩余积分(account) 是否有变化
+            if todayAccount == old_today and account == old_account:
+                print("今日积分和剩余积分均无变化（仅排名等变动），静默保存，不发通知。")
+                need_notify = False
+            elif current_date_str != last_record_date and todayAccount == 0:
+                print("检测到跨天积分重置为0，静默更新数据，不发通知。")
                 need_notify = False
             else:
                 need_notify = True
@@ -157,6 +153,8 @@ def monitor():
                     else:
                         print(f"今日积分增加至 {todayAccount}，但尚未达到8分，继续保持监控。")
                         msg_body += f"⚠️ **今日积分当前为 {todayAccount}，可能是部分到账，将继续监控后续变化**\n\n"
+                elif old_account is not None and account < old_account:
+                    msg_body += f"🛍️ **检测到剩余积分减少，可能是进行了商品兑换**\n\n"
                 
                 old_rank = last_data.get('ranking')
                 if old_rank != ranking:
@@ -169,7 +167,6 @@ def monitor():
                 else:
                     msg_body += f"📈 今日新增: {todayAccount}\n"
                     
-                old_account = last_data.get('account')
                 if old_account != account:
                     diff = account - old_account if old_account is not None else 0
                     sign = f"+{diff}" if diff > 0 else f"{diff}"
@@ -195,14 +192,29 @@ def monitor():
         else:
             print(f"数据未发生变化。剩余积分维持 {account}。")
             
-        # 👇【补上的关键代码：执行发送微信】👇
+        # 发送微信逻辑
         if need_notify:
             send_wechat_msg(msg_title, msg_body)
             
-        # 只要有任何数据变化，立刻更新 JSON 供 GitHub Action 提交
+        # 只要有任何数据变化，立刻更新 JSON 和 MD 供 GitHub Action 提交
         if last_data is None or current_simplified != last_data:
+            # 写 JSON
             with open(DATA_FILE, "w", encoding="utf-8") as f:
                 json.dump(current_simplified, f, ensure_ascii=False, indent=4)
+            
+            # 写 Markdown 表格
+            try:
+                with open("history.md", "w", encoding="utf-8") as f:
+                    f.write("# 📅 每日积分获取记录\n\n")
+                    f.write("| 日期 | 当日最高新增积分 | 状态 |\n")
+                    f.write("| :--- | :---: | :---: |\n")
+                    # 按日期倒序排列，最新的在最上面
+                    for date_key in sorted(history_record.keys(), reverse=True):
+                        score = history_record[date_key]
+                        icon = "✅ 达标" if score >= 8 else ("⚠️ 未满" if score > 0 else "❌ 零分")
+                        f.write(f"| {date_key} | {score} | {icon} |\n")
+            except Exception as e:
+                print(f"写入 Markdown 失败: {e}")
                 
     except Exception as e:
         print(f"请求异常：{e}")
