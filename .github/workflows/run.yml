@@ -29,6 +29,8 @@ jobs:
       - name: 运行监控脚本
         env:
           SERVER_KEY: ${{ secrets.SERVER_KEY }}
+          TARGET_NAME: ${{ secrets.TARGET_NAME }}
+          VILLAGE_ID: ${{ secrets.VILLAGE_ID }}
         run: python monitor.py
 
       - name: 保存数据状态并推送到仓库
