@@ -37,7 +37,7 @@ jobs:
         run: |
           git config --global user.name 'GitHub Action'
           git config --global user.email 'action@github.com'
-          git add last_data.json
+          git add last_data.json history.md
           if git diff --staged --quiet; then
             echo "数据无变化，跳过保存"
           else
