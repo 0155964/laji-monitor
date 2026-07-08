@@ -35,12 +35,34 @@ def get_beijing_date():
     bj_now = utc_now + timedelta(hours=8)
     return bj_now.strftime("%Y-%m-%d")
 
+# def send_wechat_msg(title, content):
+#     if not SERVER_CHAN_KEY:
+#         print("未配置 SERVER_KEY，跳过微信通知。")
+#         return
+#     url = f"https://sctapi.ftqq.com/{SERVER_CHAN_KEY}.send"
+#     requests.post(url, data={"title": title, "desp": content})
+
 def send_wechat_msg(title, content):
     if not SERVER_CHAN_KEY:
         print("未配置 SERVER_KEY，跳过微信通知。")
         return
     url = f"https://sctapi.ftqq.com/{SERVER_CHAN_KEY}.send"
-    requests.post(url, data={"title": title, "desp": content})
+    
+    # 打印用来排查的调试信息
+    print(f"[DEBUG] 准备向 Server酱 发送请求...")
+    print(f"[DEBUG] KEY 长度: {len(SERVER_CHAN_KEY)}, KEY 前缀: {SERVER_CHAN_KEY[:4]}")
+    
+    try:
+        # Server酱更推荐用 json 或者将 header 设置完整
+        headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+        res = requests.post(url, data={"title": title, "desp": content}, headers=headers, timeout=10)
+        
+        # 强制打印 Server酱 返回的真实原因
+        print(f"[DEBUG] Server酱返回状态码: {res.status_code}")
+        print(f"[DEBUG] Server酱返回内容: {res.text}")
+        
+    except Exception as e:
+        print(f"[ERROR] 请求 Server酱 发生异常: {e}")
 
 def get_last_data():
     if os.path.exists(DATA_FILE):
