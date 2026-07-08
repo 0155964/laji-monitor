@@ -35,13 +35,6 @@ def get_beijing_date():
     bj_now = utc_now + timedelta(hours=8)
     return bj_now.strftime("%Y-%m-%d")
 
-# def send_wechat_msg(title, content):
-#     if not SERVER_CHAN_KEY:
-#         print("未配置 SERVER_KEY，跳过微信通知。")
-#         return
-#     url = f"https://sctapi.ftqq.com/{SERVER_CHAN_KEY}.send"
-#     requests.post(url, data={"title": title, "desp": content})
-
 def send_wechat_msg(title, content):
     if not SERVER_CHAN_KEY:
         print("未配置 SERVER_KEY，跳过微信通知。")
@@ -199,16 +192,12 @@ def monitor():
                     msg_body += f"🛒 已用积分: {old_used} -> {usedAccount} ({sign})\n"
                 else:
                     msg_body += f"🛒 已用积分: {usedAccount}\n"
-                else:
+        else:
             print(f"数据未发生变化。剩余积分维持 {account}。")
             
-        # 👇👇👇 补上这段最关键的发送逻辑 👇👇👇
+        # 👇【补上的关键代码：执行发送微信】👇
         if need_notify:
             send_wechat_msg(msg_title, msg_body)
-        # 👆👆👆 补上这段最关键的发送逻辑 👆👆👆
-            
-        # 只要有任何数据变化，立刻更新 JSON 供 GitHub Action 提交
-        if last_data is None or current_simplified != last_data:
             
         # 只要有任何数据变化，立刻更新 JSON 供 GitHub Action 提交
         if last_data is None or current_simplified != last_data:
