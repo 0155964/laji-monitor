@@ -27,10 +27,11 @@ HEADERS = {
 
 DATA_FILE = "last_data.json"
 
-def get_beijing_date():
+def get_beijing_time_tuple():
+    """返回当前的北京日期(YYYY-MM-DD)和时间(HH:MM:SS)"""
     utc_now = datetime.now(timezone.utc)
     bj_now = utc_now + timedelta(hours=8)
-    return bj_now.strftime("%Y-%m-%d")
+    return bj_now.strftime("%Y-%m-%d"), bj_now.strftime("%H:%M:%S")
 
 def send_wechat_msg(title, content):
     if not SERVER_CHAN_KEY:
@@ -59,8 +60,9 @@ def get_last_data():
 def monitor():
     try:
         last_data = get_last_data()
-        current_date_str = get_beijing_date()
+        current_date_str, current_time_str = get_beijing_time_tuple()
         
+        # 核心拦截逻辑：检查今天是否已经彻底完成（拿到至少4分）
         if last_data and last_data.get("finished_date") == current_date_str:
             print(f"[{current_date_str}] 今日积分已达标，暂停运行，明天自动恢复。")
             return
@@ -87,9 +89,20 @@ def monitor():
         allAccount = current.get('allAccount')
         usedAccount = current.get('usedAccount')
 
-        # 【历史记录逻辑】
+        # 【历史记录逻辑】更新：兼容旧版本并支持存储时间和分数
         history_record = last_data.get("history_record", {}) if last_data else {}
-        history_record[current_date_str] = max(history_record.get(current_date_str, 0), todayAccount)
+        
+        # 获取今天已存的记录（如果旧版只存了数字，这里做兼容转换）
+        today_record = history_record.get(current_date_str, {"score": 0, "time": current_time_str})
+        if isinstance(today_record, int):
+            today_record = {"score": today_record, "time": current_time_str}
+
+        # 只有当前抓到的分数比历史高，才更新分数和对应的时间
+        if todayAccount > today_record["score"]:
+            today_record["score"] = todayAccount
+            today_record["time"] = current_time_str
+        
+        history_record[current_date_str] = today_record
 
         # 【脱敏处理】
         current_simplified = {
@@ -144,14 +157,14 @@ def monitor():
                 need_notify = True
                 msg_title = f"积分变动提醒: {userName}"
                 
-                # 判断新增积分是否达到停止标准 (>=8)
+                # 【门槛降低】：只要今日分数大于旧分数，并且达到 4 分及以上，就判定为达标
                 if todayAccount > old_today:
-                    if todayAccount >= 8:
-                        print("检测到今日积分达标(>=8)，打上今日免查标记！")
+                    if todayAccount >= 4:
+                        print(f"检测到今日积分达标(>={todayAccount})，打上今日免查标记！")
                         current_simplified["finished_date"] = current_date_str
                         msg_body += f"✅ **今日已获取 {todayAccount} 分，任务圆满达标，今日脚本停止运行**\n\n"
                     else:
-                        print(f"今日积分增加至 {todayAccount}，但尚未达到8分，继续保持监控。")
+                        print(f"今日积分增加至 {todayAccount}，但尚未达到4分，继续保持监控。")
                         msg_body += f"⚠️ **今日积分当前为 {todayAccount}，可能是部分到账，将继续监控后续变化**\n\n"
                 elif old_account is not None and account < old_account:
                     msg_body += f"🛍️ **检测到剩余积分减少，可能是进行了商品兑换**\n\n"
@@ -202,17 +215,34 @@ def monitor():
             with open(DATA_FILE, "w", encoding="utf-8") as f:
                 json.dump(current_simplified, f, ensure_ascii=False, indent=4)
             
-            # 写 Markdown 表格
+            # 【写 Markdown 表格：支持时间和灵活的评分图标】
             try:
                 with open("history.md", "w", encoding="utf-8") as f:
                     f.write("# 📅 每日积分获取记录\n\n")
-                    f.write("| 日期 | 当日最高新增积分 | 状态 |\n")
-                    f.write("| :--- | :---: | :---: |\n")
-                    # 按日期倒序排列，最新的在最上面
+                    f.write("| 日期 | 达标时间 | 当日最高新增积分 | 状态 |\n")
+                    f.write("| :--- | :---: | :---: | :---: |\n")
+                    # 按日期倒序排列
                     for date_key in sorted(history_record.keys(), reverse=True):
-                        score = history_record[date_key]
-                        icon = "✅ 达标" if score >= 8 else ("⚠️ 未满" if score > 0 else "❌ 零分")
-                        f.write(f"| {date_key} | {score} | {icon} |\n")
+                        record = history_record[date_key]
+                        
+                        # 兼容以前只存了数字的旧数据
+                        if isinstance(record, int):
+                            score = record
+                            rec_time = "未知"
+                        else:
+                            score = record.get("score", 0)
+                            rec_time = record.get("time", "未知")
+
+                        if score > 4:
+                            icon = "🌟 补发达标"
+                        elif score == 4:
+                            icon = "✅ 达标"
+                        elif score > 0:
+                            icon = "⚠️ 未满"
+                        else:
+                            icon = "❌ 零分"
+                            
+                        f.write(f"| {date_key} | {rec_time} | {score} | {icon} |\n")
             except Exception as e:
                 print(f"写入 Markdown 失败: {e}")
                 
