@@ -1,3 +1,5 @@
+#每天的晚上6-9点，如果当日积分和剩余积分有增加则今天停止运行
+#如果发现当日积分增加，我们就把今天的“日期”存入 last_data.json 中作为标记。后续每次运行脚本时，先检查这个日期，如果是今天，就直接退出不查了；如果是第二天，自动恢复检查。
 import requests
 import urllib.parse
 import os
@@ -215,11 +217,12 @@ def monitor():
             with open(DATA_FILE, "w", encoding="utf-8") as f:
                 json.dump(current_simplified, f, ensure_ascii=False, indent=4)
             
-            # 【写 Markdown 表格：支持时间和灵活的评分图标】
+            # 【写 Markdown 表格：修改了表头名称并增加顶部说明】
             try:
                 with open("history.md", "w", encoding="utf-8") as f:
                     f.write("# 📅 每日积分获取记录\n\n")
-                    f.write("| 日期 | 达标时间 | 当日最高新增积分 | 状态 |\n")
+                    f.write("> 💡 **说明**：本程序设定为每 5 分钟自动检测一次，并非实时更新。因此表格中记录的「检测时间」与实际积分到账时间可能会有几分钟的延迟。\n\n")
+                    f.write("| 日期 | 检测时间 | 当日最高新增积分 | 状态 |\n")
                     f.write("| :--- | :---: | :---: | :---: |\n")
                     # 按日期倒序排列
                     for date_key in sorted(history_record.keys(), reverse=True):
