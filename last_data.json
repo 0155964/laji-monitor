@@ -2,13 +2,13 @@
     "groupName": "***",
     "numberPlate": "***",
     "userName": "***",
-    "account": 134,
+    "account": 138,
     "todayAccount": 4,
-    "ranking": 56,
-    "allAccount": 584,
+    "ranking": 55,
+    "allAccount": 588,
     "usedAccount": 450,
-    "finished_date": "2026-07-19",
-    "record_date": "2026-07-19",
+    "finished_date": "2026-07-20",
+    "record_date": "2026-07-20",
     "history_record": {
         "2026-07-08": 4,
         "2026-07-09": {
@@ -54,6 +54,10 @@
         "2026-07-19": {
             "score": 4,
             "time": "20:07:26"
+        },
+        "2026-07-20": {
+            "score": 4,
+            "time": "20:19:21"
         }
     }
 }
