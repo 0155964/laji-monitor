@@ -3,12 +3,12 @@
     "numberPlate": "***",
     "userName": "***",
     "account": 190,
-    "todayAccount": 4,
-    "ranking": 49,
+    "todayAccount": 0,
+    "ranking": 59,
     "allAccount": 640,
     "usedAccount": 450,
     "finished_date": "2026-08-02",
-    "record_date": "2026-08-02",
+    "record_date": "2026-08-03",
     "history_record": {
         "2026-07-08": 4,
         "2026-07-09": {
@@ -110,6 +110,10 @@
         "2026-08-02": {
             "score": 4,
             "time": "20:32:06"
+        },
+        "2026-08-03": {
+            "score": 0,
+            "time": "20:56:27"
         }
     }
 }
