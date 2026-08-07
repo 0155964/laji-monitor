@@ -4,11 +4,11 @@
     "userName": "***",
     "account": 198,
     "todayAccount": 0,
-    "ranking": 64,
+    "ranking": 65,
     "allAccount": 648,
     "usedAccount": 450,
     "finished_date": "2026-08-05",
-    "record_date": "2026-08-06",
+    "record_date": "2026-08-07",
     "history_record": {
         "2026-07-08": 4,
         "2026-07-09": {
@@ -126,6 +126,10 @@
         "2026-08-06": {
             "score": 0,
             "time": "20:04:59"
+        },
+        "2026-08-07": {
+            "score": 0,
+            "time": "18:56:08"
         }
     }
 }
