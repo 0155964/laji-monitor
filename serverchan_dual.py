@@ -7,6 +7,7 @@ import monitor
 
 _original_send = monitor.send_wechat_msg
 _SECOND_SEND_KEY = os.environ.get("SERVERCHAN_SENDKEY", "")
+_TEST_PUSH = os.environ.get("TEST_PUSH", "").lower() == "true"
 
 
 def send_dual(title, content):
@@ -33,4 +34,11 @@ monitor.send_wechat_msg = send_dual
 
 
 if __name__ == "__main__":
-    monitor.monitor()
+    if _TEST_PUSH:
+        print("开始手动双推送测试，不运行监控逻辑。")
+        send_dual(
+            "Server酱双账号测试",
+            "这是一条手动测试消息。\n\n如果你同时收到这条消息，说明两个 Server酱账号推送均配置成功。",
+        )
+    else:
+        monitor.monitor()

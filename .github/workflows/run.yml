@@ -5,7 +5,13 @@ on:
     # 每天北京时间 18:00 到 21:55，每 5 分钟执行一次
     # UTC 时间 10, 11, 12, 13 点对应北京时间的 18, 19, 20, 21 点
     - cron: '*/5 10-13 * * *'
-  workflow_dispatch: # 允许手动点击运行按钮
+  workflow_dispatch:
+    inputs:
+      test_push:
+        description: '是否发送双账号测试消息（不修改监控数据）'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -16,10 +22,10 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       - name: 设置 Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: '3.10'
 
@@ -32,6 +38,7 @@ jobs:
           TARGET_NAME: ${{ secrets.TARGET_NAME }}
           VILLAGE_ID: ${{ secrets.VILLAGE_ID }}
           SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+          TEST_PUSH: ${{ inputs.test_push }}
         run: python serverchan_dual.py
 
       - name: 保存数据状态并推送到仓库
