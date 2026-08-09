@@ -31,7 +31,8 @@ jobs:
           SERVER_KEY: ${{ secrets.SERVER_KEY }}
           TARGET_NAME: ${{ secrets.TARGET_NAME }}
           VILLAGE_ID: ${{ secrets.VILLAGE_ID }}
-        run: python monitor.py
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+        run: python serverchan_dual.py
 
       - name: 保存数据状态并推送到仓库
         run: |
