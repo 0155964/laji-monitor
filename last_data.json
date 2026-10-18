@@ -2,12 +2,12 @@
     "groupName": "***",
     "numberPlate": "***",
     "userName": "***",
-    "account": 482,
-    "todayAccount": 0,
+    "account": 486,
+    "todayAccount": 4,
     "ranking": 57,
-    "allAccount": 932,
+    "allAccount": 936,
     "usedAccount": 450,
-    "finished_date": "2026-10-17",
+    "finished_date": "2026-10-18",
     "record_date": "2026-10-18",
     "history_record": {
         "2026-07-08": 4,
@@ -388,8 +388,8 @@
             "time": "21:31:27"
         },
         "2026-10-18": {
-            "score": 0,
-            "time": "00:37:49"
+            "score": 4,
+            "time": "21:50:08"
         }
     }
 }
