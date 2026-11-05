@@ -91,19 +91,35 @@ def monitor():
         allAccount = current.get('allAccount')
         usedAccount = current.get('usedAccount')
 
-        # 【历史记录逻辑】更新：兼容旧版本并支持存储时间和分数
+        # 【历史记录逻辑】兼容旧版本，并保存当日最高积分与最新积分快照
         history_record = last_data.get("history_record", {}) if last_data else {}
         
-        # 获取今天已存的记录（如果旧版只存了数字，这里做兼容转换）
-        today_record = history_record.get(current_date_str, {"score": 0, "time": current_time_str})
+        # 获取今天已存的记录；旧版只存数字时做兼容转换
+        today_record = history_record.get(current_date_str, {
+            "score": 0,
+            "time": current_time_str,
+            "account": account,
+            "allAccount": allAccount,
+            "usedAccount": usedAccount
+        })
         if isinstance(today_record, int):
-            today_record = {"score": today_record, "time": current_time_str}
+            today_record = {
+                "score": today_record,
+                "time": current_time_str,
+                "account": account,
+                "allAccount": allAccount,
+                "usedAccount": usedAccount
+            }
 
         # 只有当前抓到的分数比历史高，才更新分数和对应的时间
         if todayAccount > today_record["score"]:
             today_record["score"] = todayAccount
             today_record["time"] = current_time_str
         
+        # 每次运行都保存当天最新的剩余积分、历史总分和已用积分
+        today_record["account"] = account
+        today_record["allAccount"] = allAccount
+        today_record["usedAccount"] = usedAccount
         history_record[current_date_str] = today_record
 
         # 【脱敏处理】
@@ -217,13 +233,13 @@ def monitor():
             with open(DATA_FILE, "w", encoding="utf-8") as f:
                 json.dump(current_simplified, f, ensure_ascii=False, indent=4)
             
-            # 【写 Markdown 表格：修改了表头名称并增加顶部说明】
+            # 【写 Markdown 表格：记录每日最高新增积分及最新积分快照】
             try:
                 with open("history.md", "w", encoding="utf-8") as f:
                     f.write("# 📅 每日积分获取记录\n\n")
                     f.write("> 💡 **说明**：本程序设定为每 5 分钟自动检测一次，并非实时更新。因此表格中记录的「检测时间」与实际积分到账时间可能会有几分钟的延迟。\n\n")
-                    f.write("| 日期 | 检测时间 | 当日最高新增积分 | 状态 |\n")
-                    f.write("| :--- | :---: | :---: | :---: |\n")
+                    f.write("| 日期 | 检测时间 | 当日最高新增积分 | 剩余积分 | 历史总分 | 已用积分 | 状态 |\n")
+                    f.write("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |\n")
                     # 按日期倒序排列
                     for date_key in sorted(history_record.keys(), reverse=True):
                         record = history_record[date_key]
@@ -232,9 +248,15 @@ def monitor():
                         if isinstance(record, int):
                             score = record
                             rec_time = "未知"
+                            remaining = "—"
+                            total = "—"
+                            used = "—"
                         else:
                             score = record.get("score", 0)
                             rec_time = record.get("time", "未知")
+                            remaining = record.get("account", "—")
+                            total = record.get("allAccount", "—")
+                            used = record.get("usedAccount", "—")
 
                         if score > 4:
                             icon = "🌟 补发达标"
@@ -245,7 +267,7 @@ def monitor():
                         else:
                             icon = "❌ 零分"
                             
-                        f.write(f"| {date_key} | {rec_time} | {score} | {icon} |\n")
+                        f.write(f"| {date_key} | {rec_time} | {score} | {remaining} | {total} | {used} | {icon} |\n")
             except Exception as e:
                 print(f"写入 Markdown 失败: {e}")
                 
