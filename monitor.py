@@ -1,278 +1,208 @@
-#每天的晚上6-9点，如果当日积分和剩余积分有增加则今天停止运行
-#如果发现当日积分增加，我们就把今天的“日期”存入 last_data.json 中作为标记。后续每次运行脚本时，先检查这个日期，如果是今天，就直接退出不查了；如果是第二天，自动恢复检查。
-import requests
-import urllib.parse
-import os
 import json
-import time
+import os
 import sys
+import time
+import urllib.parse
+from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 
-# 从环境变量中读取敏感信息
+import requests
+
 TARGET_NAME = os.environ.get("TARGET_NAME", "")
 VILLAGE_ID = os.environ.get("VILLAGE_ID", "")
-SERVER_CHAN_KEY = os.environ.get("SERVER_KEY", "") 
-
-# 增加安全检查
+SERVER_CHAN_KEY = os.environ.get("SERVER_KEY", "")
 if not TARGET_NAME or not VILLAGE_ID:
-    print("错误：未在环境变量(Secrets)中配置 TARGET_NAME 或 VILLAGE_ID，程序退出。")
+    print("错误：未配置 TARGET_NAME 或 VILLAGE_ID。")
     sys.exit(1)
 
 ENCODED_USER_ID = urllib.parse.quote(TARGET_NAME)
 API_URL = f"https://health.yueqixx.cn/rubbish/user/queryRanking?villageId={VILLAGE_ID}&userId={ENCODED_USER_ID}&type=0&pageNo=1&pageSize=10"
-
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     "Accept": "application/json, text/plain, */*",
-    "Referer": "http://rubbish.yueqixx.cn:8912/"
+    "Referer": "http://rubbish.yueqixx.cn:8912/",
 }
-
 DATA_FILE = "last_data.json"
 
+
 def get_beijing_time_tuple():
-    """返回当前的北京日期(YYYY-MM-DD)和时间(HH:MM:SS)"""
-    utc_now = datetime.now(timezone.utc)
-    bj_now = utc_now + timedelta(hours=8)
-    return bj_now.strftime("%Y-%m-%d"), bj_now.strftime("%H:%M:%S")
+    now = datetime.now(timezone.utc) + timedelta(hours=8)
+    return now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S")
+
 
 def send_wechat_msg(title, content):
     if not SERVER_CHAN_KEY:
         print("未配置 SERVER_KEY，跳过微信通知。")
         return
-    url = f"https://sctapi.ftqq.com/{SERVER_CHAN_KEY}.send"
-    print(f"[DEBUG] 准备向 Server酱 发送请求...")
-    print(f"[DEBUG] KEY 长度: {len(SERVER_CHAN_KEY)}, KEY 前缀: {SERVER_CHAN_KEY[:4]}")
     try:
-        headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-        res = requests.post(url, data={"title": title, "desp": content}, headers=headers, timeout=10)
-        print(f"[DEBUG] Server酱返回状态码: {res.status_code}")
-        print(f"[DEBUG] Server酱返回内容: {res.text}")
-    except Exception as e:
-        print(f"[ERROR] 请求 Server酱 发生异常: {e}")
+        res = requests.post(
+            f"https://sctapi.ftqq.com/{SERVER_CHAN_KEY}.send",
+            data={"title": title, "desp": content}, timeout=10,
+        )
+        print(f"Server酱返回状态码: {res.status_code}")
+        print(f"Server酱返回内容: {res.text}")
+    except requests.RequestException:
+        print("Server酱请求失败，请检查网络或服务状态。")
+
 
 def get_last_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return None
+    if not os.path.exists(DATA_FILE):
+        return None
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def total_delta_for(history, date_key, total):
+    previous_date = (
+        datetime.strptime(date_key, "%Y-%m-%d") - timedelta(days=1)
+    ).strftime("%Y-%m-%d")
+    previous = history.get(previous_date)
+    if not isinstance(previous, dict):
+        return None
+    baseline = previous.get("allAccount")
+    if baseline is None or total is None:
+        return None
+    return total - baseline
+
+
+def format_delta(value):
+    return "—" if value is None else f"{value:+d}"
+
+
+def render_history(history):
+    lines = [
+        "# 每日积分获取记录", "",
+        "> 运行时间保持北京时间18:00–21:55，每5分钟计划检测一次，并非实时更新；实际执行可能延迟。当天接口积分达到4分后停止查询，次日恢复。", "",
+        "> 检测时间：首次建立当天记录时设置，之后仅在接口当日积分创新高时更新，不代表最后查询时间。", "",
+        "> 当日最高新增积分：接口 todayAccount 当天实际检测到的最高值；0仅表示未检测到非零当日积分，不代表当天实际未得分。", "",
+        "> 总分增量 = 本日最后一次成功查询并保存的历史总分 − 前一自然日最后一次保存的历史总分。表示两个快照之间的净变化，可能含此前日期补发或人工调整，不等于当天投放所得；与当日最高新增积分分开统计，不相加。前一天缺少有效总分时显示“—”，不跨缺失日期计算。负值表示总分减少，需核对。", "",
+        "> 剩余积分、历史总分和已用积分均为当日最后保存的快照；达标后不再查询，因此不是日终最终值。旧记录缺少的字段显示“—”，不自动回填。", "",
+        "| 日期 | 检测时间 | 当日最高新增积分 | 总分增量 | 剩余积分 | 历史总分 | 已用积分 | 状态 |",
+        "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |",
+    ]
+    for date_key in sorted(history, reverse=True):
+        record = history[date_key]
+        if isinstance(record, int):
+            record = {"score": record}
+        score = record.get("score", 0)
+        delta = total_delta_for(history, date_key, record.get("allAccount"))
+        if score > 4:
+            status = "达标（含额外积分，可能补发）"
+        elif score == 4:
+            status = "达标"
+        elif score > 0:
+            status = "未满4分"
+        else:
+            status = "暂未检测到当日积分"
+        if delta is not None and delta < 0:
+            status += "；总分减少待核对"
+        elif score == 0 and delta is not None and delta > 0:
+            status += "；总分有增加"
+        cells = [date_key, record.get("time", "未知"), score,
+                 format_delta(delta), record.get("account", "—"),
+                 record.get("allAccount", "—"), record.get("usedAccount", "—"), status]
+        lines.append("| " + " | ".join(map(str, cells)) + " |")
+    return "\n".join(lines) + "\n"
+
 
 def monitor():
     try:
         last_data = get_last_data()
-        current_date_str, current_time_str = get_beijing_time_tuple()
-        
-        # 核心拦截逻辑：检查今天是否已经彻底完成（拿到至少4分）
-        if last_data and last_data.get("finished_date") == current_date_str:
-            print(f"[{current_date_str}] 今日积分已达标，暂停运行，明天自动恢复。")
+        date_str, time_str = get_beijing_time_tuple()
+        if last_data and last_data.get("finished_date") == date_str:
+            print(f"[{date_str}] 今日积分已达标，暂停查询，明天恢复。")
             return
 
-        timestamp = int(time.time() * 1000)
-        no_cache_url = f"{API_URL}&_t={timestamp}"
-        
-        response = requests.get(no_cache_url, headers=HEADERS, timeout=10)
-        data = response.json()
-        search_result_list = data.get("data", {}).get("searchResult", [])
-        
-        if not search_result_list:
-            print("未找到目标数据")
+        response = requests.get(
+            f"{API_URL}&_t={int(time.time() * 1000)}",
+            headers=HEADERS, timeout=10,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("code") != 200:
+            print("接口返回失败，不更新已有记录。")
             return
-            
-        current = search_result_list[0]
-        
-        groupName = current.get('groupName')
-        numberPlate = current.get('numberPlate')
-        userName = current.get('userName')
-        account = current.get('account')
-        todayAccount = current.get('todayAccount')
-        ranking = current.get('ranking')
-        allAccount = current.get('allAccount')
-        usedAccount = current.get('usedAccount')
+        results = (payload.get("data") or {}).get("searchResult", [])
+        matches = [item for item in results if item.get("userName") == TARGET_NAME]
+        if len(matches) != 1:
+            print("未找到唯一同名目标，不更新记录。")
+            return
+        current = matches[0]
+        fields = ("todayAccount", "account", "allAccount", "usedAccount", "ranking")
+        values = {key: int(current[key]) for key in fields}
+        today = values["todayAccount"]
+        total = values["allAccount"]
+        history = deepcopy((last_data or {}).get("history_record", {}))
+        record = history.get(date_str, {"score": 0, "time": time_str})
+        if isinstance(record, int):
+            record = {"score": record, "time": time_str}
+        if today > record.get("score", 0):
+            record["score"] = today
+            record["time"] = time_str
+        for key in ("account", "allAccount", "usedAccount"):
+            record[key] = values[key]
+        record["total_delta"] = total_delta_for(history, date_str, total)
+        history[date_str] = record
 
-        # 【历史记录逻辑】兼容旧版本，并保存当日最高积分与最新积分快照
-        history_record = last_data.get("history_record", {}) if last_data else {}
-        
-        # 获取今天已存的记录；旧版只存数字时做兼容转换
-        today_record = history_record.get(current_date_str, {
-            "score": 0,
-            "time": current_time_str,
-            "account": account,
-            "allAccount": allAccount,
-            "usedAccount": usedAccount
-        })
-        if isinstance(today_record, int):
-            today_record = {
-                "score": today_record,
-                "time": current_time_str,
-                "account": account,
-                "allAccount": allAccount,
-                "usedAccount": usedAccount
-            }
-
-        # 只有当前抓到的分数比历史高，才更新分数和对应的时间
-        if todayAccount > today_record["score"]:
-            today_record["score"] = todayAccount
-            today_record["time"] = current_time_str
-        
-        # 每次运行都保存当天最新的剩余积分、历史总分和已用积分
-        today_record["account"] = account
-        today_record["allAccount"] = allAccount
-        today_record["usedAccount"] = usedAccount
-        history_record[current_date_str] = today_record
-
-        # 【脱敏处理】
-        current_simplified = {
-            "groupName": "***",
-            "numberPlate": "***",
-            "userName": "***",
-            "account": account,
-            "todayAccount": todayAccount,
-            "ranking": ranking,
-            "allAccount": allAccount,
-            "usedAccount": usedAccount,
-            "finished_date": last_data.get("finished_date") if last_data else "",
-            "record_date": current_date_str,
-            "history_record": history_record
+        saved = {
+            "groupName": "***", "numberPlate": "***", "userName": "***",
+            **values,
+            "finished_date": date_str if today >= 4 else (last_data or {}).get("finished_date", ""),
+            "record_date": date_str,
+            "history_record": history,
         }
-        
-        need_notify = False
-        msg_title = ""
-        msg_body = f"👤 姓名: {userName}\n🏠 地址: {groupName} {numberPlate}\n\n"
-        
-        if last_data is None:
-            print("初次运行，建立初始记录。")
-            need_notify = True
-            msg_title = f"开始监控: {userName}"
-            msg_body += (
-                f"当前排名: {ranking}\n"
-                f"今日新增: {todayAccount}\n"
-                f"剩余积分: {account}\n"
-                f"历史总分: {allAccount}\n"
-                f"已用积分: {usedAccount}"
-            )
-            
-        elif current_simplified != last_data:
-            print("发现数据有变动！")
-            last_record_date = last_data.get('record_date', '')
-            
-            if current_date_str != last_record_date:
-                old_today = 0
+        same_day = last_data is not None and last_data.get("record_date") == date_str
+        today_changed = (
+            today != last_data.get("todayAccount", 0)
+            if same_day else today > 0
+        )
+        notify = last_data is None or today_changed or any(
+            values[key] != last_data.get(key)
+            for key in ("account", "allAccount")
+        )
+        if notify:
+            title = f"{'开始监控' if last_data is None else '积分变动提醒'}: {current.get('userName')}"
+            body = [
+                f"姓名: {current.get('userName')}",
+                f"地址: {current.get('groupName')} {current.get('numberPlate')}",
+                f"查询时间: {date_str} {time_str}", "",
+            ]
+            for key, label in (("todayAccount", "当日积分"), ("account", "剩余积分"),
+                               ("allAccount", "历史总分"), ("usedAccount", "已用积分"),
+                               ("ranking", "排名")):
+                old = (last_data or {}).get(key)
+                if old is not None and old != values[key]:
+                    note = "（跨天值，仅展示，不因清零单独通知）" if key == "todayAccount" and not same_day else ""
+                    body.append(f"{label}: {old} -> {values[key]}{note}")
+                else:
+                    body.append(f"{label}: {values[key]}")
+            if last_data is not None and last_data.get("allAccount") is not None:
+                body.append(f"相比上次查询总分净变化: {format_delta(total - last_data['allAccount'])}")
+            body.append(f"相比前一自然日已保存总分快照: {format_delta(record['total_delta'])}")
+            body.append("总分差额可能含此前日期补发或人工调整，不等同于当天投放所得。")
+            if today >= 4:
+                body.append("当日接口积分已达4分，本次保存后停止当天查询。")
             else:
-                old_today = last_data.get('todayAccount', 0)
-                
-            old_account = last_data.get('account')
-
-            # 【精准拦截】：只看 今日积分(todayAccount) 或 剩余积分(account) 是否有变化
-            if todayAccount == old_today and account == old_account:
-                print("今日积分和剩余积分均无变化（仅排名等变动），静默保存，不发通知。")
-                need_notify = False
-            elif current_date_str != last_record_date and todayAccount == 0:
-                print("检测到跨天积分重置为0，静默更新数据，不发通知。")
-                need_notify = False
-            else:
-                need_notify = True
-                msg_title = f"积分变动提醒: {userName}"
-                
-                # 【门槛降低】：只要今日分数大于旧分数，并且达到 4 分及以上，就判定为达标
-                if todayAccount > old_today:
-                    if todayAccount >= 4:
-                        print(f"检测到今日积分达标(>={todayAccount})，打上今日免查标记！")
-                        current_simplified["finished_date"] = current_date_str
-                        msg_body += f"✅ **今日已获取 {todayAccount} 分，任务圆满达标，今日脚本停止运行**\n\n"
-                    else:
-                        print(f"今日积分增加至 {todayAccount}，但尚未达到4分，继续保持监控。")
-                        msg_body += f"⚠️ **今日积分当前为 {todayAccount}，可能是部分到账，将继续监控后续变化**\n\n"
-                elif old_account is not None and account < old_account:
-                    msg_body += f"🛍️ **检测到剩余积分减少，可能是进行了商品兑换**\n\n"
-                
-                old_rank = last_data.get('ranking')
-                if old_rank != ranking:
-                    msg_body += f"🏅 排名: {old_rank} -> {ranking} ({'上升' if ranking < old_rank else '下降'})\n"
-                else:
-                    msg_body += f"🏅 排名: {ranking}\n"
-                    
-                if old_today != todayAccount:
-                    msg_body += f"📈 今日新增: {old_today} -> {todayAccount}\n"
-                else:
-                    msg_body += f"📈 今日新增: {todayAccount}\n"
-                    
-                if old_account != account:
-                    diff = account - old_account if old_account is not None else 0
-                    sign = f"+{diff}" if diff > 0 else f"{diff}"
-                    msg_body += f"💰 剩余积分: {old_account} -> {account} ({sign})\n"
-                else:
-                    msg_body += f"💰 剩余积分: {account}\n"
-                    
-                old_total = last_data.get('allAccount')
-                if old_total != allAccount:
-                    diff = allAccount - old_total if old_total is not None else 0
-                    sign = f"+{diff}" if diff > 0 else f"{diff}"
-                    msg_body += f"🌟 历史总分: {old_total} -> {allAccount} ({sign})\n"
-                else:
-                    msg_body += f"🌟 历史总分: {allAccount}\n"
-                    
-                old_used = last_data.get('usedAccount')
-                if old_used != usedAccount:
-                    diff = usedAccount - old_used if old_used is not None else 0
-                    sign = f"+{diff}" if diff > 0 else f"{diff}"
-                    msg_body += f"🛒 已用积分: {old_used} -> {usedAccount} ({sign})\n"
-                else:
-                    msg_body += f"🛒 已用积分: {usedAccount}\n"
+                body.append("当日接口积分未满4分，继续原时段检测。")
+            send_wechat_msg(title, "\n\n".join(body))
         else:
-            print(f"数据未发生变化。剩余积分维持 {account}。")
-            
-        # 发送微信逻辑
-        if need_notify:
-            send_wechat_msg(msg_title, msg_body)
-            
-        # 只要有任何数据变化，立刻更新 JSON 和 MD 供 GitHub Action 提交
-        if last_data is None or current_simplified != last_data:
-            # 写 JSON
-            with open(DATA_FILE, "w", encoding="utf-8") as f:
-                json.dump(current_simplified, f, ensure_ascii=False, indent=4)
-            
-            # 【写 Markdown 表格：记录每日最高新增积分及最新积分快照】
-            try:
-                with open("history.md", "w", encoding="utf-8") as f:
-                    f.write("# 📅 每日积分获取记录\n\n")
-                    f.write("> 💡 **说明**：本程序设定为每 5 分钟自动检测一次，并非实时更新。因此表格中记录的「检测时间」与实际积分到账时间可能会有几分钟的延迟。\n\n")
-                    f.write("| 日期 | 检测时间 | 当日最高新增积分 | 剩余积分 | 历史总分 | 已用积分 | 状态 |\n")
-                    f.write("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |\n")
-                    # 按日期倒序排列
-                    for date_key in sorted(history_record.keys(), reverse=True):
-                        record = history_record[date_key]
-                        
-                        # 兼容以前只存了数字的旧数据
-                        if isinstance(record, int):
-                            score = record
-                            rec_time = "未知"
-                            remaining = "—"
-                            total = "—"
-                            used = "—"
-                        else:
-                            score = record.get("score", 0)
-                            rec_time = record.get("time", "未知")
-                            remaining = record.get("account", "—")
-                            total = record.get("allAccount", "—")
-                            used = record.get("usedAccount", "—")
+            print("无需要通知的积分变化。")
 
-                        if score > 4:
-                            icon = "🌟 补发达标"
-                        elif score == 4:
-                            icon = "✅ 达标"
-                        elif score > 0:
-                            icon = "⚠️ 未满"
-                        else:
-                            icon = "❌ 零分"
-                            
-                        f.write(f"| {date_key} | {rec_time} | {score} | {remaining} | {total} | {used} | {icon} |\n")
-            except Exception as e:
-                print(f"写入 Markdown 失败: {e}")
-                
-    except Exception as e:
-        print(f"请求异常：{e}")
+        if saved != last_data:
+            with open(DATA_FILE, "w", encoding="utf-8") as f:
+                json.dump(saved, f, ensure_ascii=False, indent=4)
+        markdown = render_history(history)
+        previous_md = None
+        if os.path.exists("history.md"):
+            with open("history.md", "r", encoding="utf-8") as f:
+                previous_md = f.read()
+        if markdown != previous_md:
+            with open("history.md", "w", encoding="utf-8") as f:
+                f.write(markdown)
+    except Exception as exc:
+        print(f"监控失败，不清空已有历史。异常类型: {type(exc).__name__}")
+        raise RuntimeError("监控失败，请检查接口、数据格式或文件状态。") from None
+
 
 if __name__ == "__main__":
     monitor()
