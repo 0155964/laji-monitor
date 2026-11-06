@@ -2,11 +2,11 @@
     "groupName": "***",
     "numberPlate": "***",
     "userName": "***",
-    "account": 558,
     "todayAccount": 0,
-    "ranking": 51,
+    "account": 258,
     "allAccount": 1008,
-    "usedAccount": 450,
+    "usedAccount": 750,
+    "ranking": 51,
     "finished_date": "2026-10-31",
     "record_date": "2026-11-06",
     "history_record": {
@@ -454,9 +454,10 @@
         "2026-11-06": {
             "score": 0,
             "time": "01:54:50",
-            "account": 558,
+            "account": 258,
             "allAccount": 1008,
-            "usedAccount": 450
+            "usedAccount": 750,
+            "total_delta": null
         }
     }
 }
