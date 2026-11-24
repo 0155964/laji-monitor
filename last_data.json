@@ -3,12 +3,12 @@
     "numberPlate": "***",
     "userName": "***",
     "todayAccount": 0,
-    "account": 330,
-    "allAccount": 1080,
+    "account": 334,
+    "allAccount": 1084,
     "usedAccount": 750,
     "ranking": 47,
     "finished_date": "2026-10-31",
-    "record_date": "2026-11-24",
+    "record_date": "2026-11-25",
     "history_record": {
         "2026-07-08": 4,
         "2026-07-09": {
@@ -600,6 +600,14 @@
             "time": "05:56:39",
             "account": 330,
             "allAccount": 1080,
+            "usedAccount": 750,
+            "total_delta": 4
+        },
+        "2026-11-25": {
+            "score": 0,
+            "time": "04:32:07",
+            "account": 334,
+            "allAccount": 1084,
             "usedAccount": 750,
             "total_delta": 4
         }
